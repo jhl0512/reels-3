@@ -54,12 +54,6 @@
       color: #333;
       font-size: 0.9rem;
 
-  function setRealVH() {
-    let vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh}px`);
-  }
-  setRealVH();
-  window.addEventListener('resize', setRealVH);
 
     }
   </style>
@@ -132,6 +126,15 @@
   const loading = document.getElementById('loading');
   const template = document.getElementById('video-template');
   template.removeAttribute('id'); container.removeChild(template);
+
+
+  function setRealVH() {
+    let vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  }
+  setRealVH();
+  window.addEventListener('resize', setRealVH);
+
 
   function parseCSV(text) {
     const lines = text.trim().split('\n');
