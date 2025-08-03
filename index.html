@@ -30,9 +30,10 @@
     .video {
       position: relative;
       scroll-snap-align: start;
-      height: 100vh;
+      height: calc(var(--vh, 1vh) * 100);
       overflow: hidden;
     }
+    
     .video video.video-bg {
       position: absolute;
       top: 0;
