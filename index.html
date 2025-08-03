@@ -11,13 +11,13 @@
     html, body {
       margin: 0;
       padding: 0;
-      height: 100%;
+      height: calc(var(--vh, 1vh) * 100); /* ← 여기서 mobile UI 높이 제외한 정확한 높이 설정 */
     }
     body {
       padding-top: env(safe-area-inset-top);
     }
     #container {
-      height: 100vh;
+      height: calc(var(--vh, 1vh) * 100); /* ← 여기서 mobile UI 높이 제외한 정확한 높이 설정 */
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       -webkit-overflow-scrolling: touch;
@@ -36,7 +36,7 @@
       position: absolute;
       top: 0;
       left: 0;
-      height: 100%;
+      height: calc(var(--vh, 1vh) * 100); /* ← 여기서 mobile UI 높이 제외한 정확한 높이 설정 */
       object-fit: cover;
       z-index: 0;
       pointer-events: none;
