@@ -8,8 +8,25 @@
 <link href="youtube_sample_globals.css" rel="stylesheet"/>
 <link href="yotuube_sample.css" rel="stylesheet"/>
 <style>
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+    body {
+      padding-top: env(safe-area-inset-top);
+    }
+    
     /* 배경 비디오 깔기 위한 최소 설정 (UI는 전혀 변경되지 않음) */
-    .video { position: relative; overflow: hidden; }
+    .video {
+      position: relative;
+      scroll-snap-align: start;
+      height: 100vh;
+      overflow: hidden;
+    }
     .video video.video-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; pointer-events: none; }
     .video > * { position: relative; z-index: 1; }
     body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
