@@ -53,6 +53,14 @@
       background: #fff;
       color: #333;
       font-size: 0.9rem;
+
+  function setRealVH() {
+    let vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  }
+  setRealVH();
+  window.addEventListener('resize', setRealVH);
+
     }
   </style>
 </head>
