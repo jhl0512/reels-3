@@ -230,14 +230,10 @@ async function loadAll() {
     });
   }
 
-  let isScrolling = false;
-  let hasScrolledOnce = false;  // ← 최초 스크롤 감지용
-  
-container.addEventListener('scroll', () => {
-  clearTimeout(container._scrollTimeout);
-  container._scrollTimeout = setTimeout(updateAudio, 200);
-});
-
+  container.addEventListener('scroll', () => {
+    clearTimeout(container._scrollTimeout);
+    container._scrollTimeout = setTimeout(updateAudio, 200);
+  });
 
   
 container.addEventListener('wheel', (e) => {
