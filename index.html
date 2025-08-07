@@ -158,6 +158,9 @@
     bg.muted = true;
     post.prepend(bg);
 
+    bg.oncanplay = () => {
+      bg.play().catch(e => console.warn('Initial play() failed:', e));
+
     post.querySelector('.id-text').textContent = data['ID'];
     post.querySelector('.title-text').textContent = data['TITLE'];
     post.querySelector('.music-text').textContent = data['MUSIC'];
