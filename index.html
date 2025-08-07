@@ -266,6 +266,16 @@ container.addEventListener('wheel', (e) => {
 
 
 loadAll();
+
+
+window.addEventListener('touchstart', () => {
+  const firstVideo = document.querySelector('.video video');
+  if (firstVideo) {
+    firstVideo.play().catch(e => console.warn('Autoplay blocked:', e));
+  }
+}, { once: true });
+
+  
 </script>
 </body>
 </html>
