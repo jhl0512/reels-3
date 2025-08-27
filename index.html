@@ -85,211 +85,241 @@
 </div>
 
 <script>
-  function setRealHeight() {
-    const vh = window.innerHeight * 0.01;
-    document.documentElement.style.setProperty('--vh', `${vh}px`);
+function setRealHeight() {
+  const vh = window.innerHeight * 0.01;
+  document.documentElement.style.setProperty('--vh', `${vh}px`);
+}
+window.addEventListener('resize', setRealHeight);
+window.addEventListener('load', setRealHeight);
+
+const categories = ['anime', 'idol', 'travel'];
+// 기존 excludedCategories 대신 → 숨김 상태 관리
+const hiddenCategories = new Map(); 
+// key: 카테고리, value: timestamp (언제 숨겼는지)
+
+const container = document.getElementById('container');
+const loading = document.getElementById('loading');
+const template = document.getElementById('video-template');
+if (!container || !loading || !template) {
+  console.error("필수 DOM 요소(container/loading/template)를 찾을 수 없습니다.");
+}
+template.removeAttribute('id');
+container?.removeChild(template);
+
+// === CSV 파싱 (기본 개선: CRLF, BOM 제거) ===
+function parseCSV(text) {
+  text = text.replace(/^\uFEFF/, ''); // BOM 제거
+  const lines = text.trim().split(/\r?\n/);
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const cols = line.split(',').map(c => c.trim());
+    const o = {};
+    headers.forEach((h, i) => (o[h] = cols[i] || ''));
+    return o;
+  });
+}
+
+// === 카테고리 숨김 & 관리 ===
+function hideCategory(cat) {
+  if (!cat || !container) return;
+  hiddenCategories.set(cat, Date.now());
+
+  // DOM에서 제거
+  [...container.querySelectorAll(`.video[data-category="${cat}"]`)]
+    .forEach(el => {
+      const vid = el.querySelector('video');
+      if (vid) { vid.pause(); vid.src = ''; }
+      el.remove();
+    });
+
+  updateVideosAfterHide();
+}
+
+// 2분 체크 후 아직 숨김인지 여부
+function isCategoryHidden(cat) {
+  if (!hiddenCategories.has(cat)) return false;
+  const hiddenAt = hiddenCategories.get(cat);
+  if (Date.now() - hiddenAt > 120000) {
+    hiddenCategories.delete(cat); // 2분 지남 → 복구
+    return false;
   }
-  window.addEventListener('resize', setRealHeight);
-  window.addEventListener('load', setRealHeight);
+  return true;
+}
 
-  // === 카테고리 & 제외 상태 관리 ===
-  const categories = ['anime', 'idol', 'travel'];
-  const excludedCategories = new Set();
+// 모든 카테고리가 숨겨져버렸을 때 → 가장 오래된 것 복원
+function restoreOldestCategory() {
+  let oldest = null;
+  let oldestTime = Infinity;
+  for (let [cat, time] of hiddenCategories) {
+    if (time < oldestTime) {
+      oldest = cat;
+      oldestTime = time;
+    }
+  }
+  if (oldest) {
+    hiddenCategories.delete(oldest);
+    return oldest;
+  }
+  return null;
+}
 
-  const container = document.getElementById('container');
-  const loading = document.getElementById('loading');
-  const template = document.getElementById('video-template');
-  template.removeAttribute('id'); container.removeChild(template);
+// 숨김 후 처리: 전부 숨김 상태라면 복원
+function updateVideosAfterHide() {
+  const visibleCats = categories.filter(c => !isCategoryHidden(c));
+  if (visibleCats.length === 0) {
+    const restored = restoreOldestCategory();
+    if (restored) {
+      console.log(`모든 카테고리가 숨겨져서 ${restored} 카테고리를 복구합니다.`);
+      reloadVideos();
+    }
+  } else {
+    reloadVideos();
+  }
+}
 
-  function parseCSV(text) {
-    const lines = text.trim().split('\n');
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-      const cols = line.split(',').map(c => c.trim());
-      let o = {};
-      headers.forEach((h, i) => o[h] = cols[i] || '');
-      return o;
+// === 포스트 생성 ===
+function createPost(data) {
+  const post = template.cloneNode(true);
+  post.dataset.category = data._category || '';
+
+  // 비디오
+  const bg = document.createElement('video');
+  bg.className = 'video-bg';
+  bg.setAttribute('data-src', data['MP4 URL']);
+  bg.autoplay = true;
+  bg.loop = true;
+  bg.playsInline = true;
+  bg.muted = true;
+  bg.preload = "none";
+  post.prepend(bg);
+
+  post.querySelector('.id-text').textContent = data['ID'];
+  post.querySelector('.title-text').textContent = data['TITLE'];
+  post.querySelector('.music-text').textContent = data['MUSIC'];
+  const cc = post.querySelector('.comment-count');
+  if (cc) cc.textContent = data['COMMENT'] || '';
+
+  const hideBtn = post.querySelector('.btn-hide-category');
+  if (hideBtn) {
+    hideBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      hideCategory(post.dataset.category);
     });
   }
 
-  // === 카테고리 전체 숨김 ===
-  function excludeCategory(cat) {
-    if (!cat) return;
-    excludedCategories.add(cat);
-    // DOM에서 해당 카테고리의 모든 포스트 제거
-    [...container.querySelectorAll(`.video[data-category="${cat}"]`)]
-      .forEach(el => {
-        const vid = el.querySelector('video');
-        if (vid) { vid.pause(); vid.src = ''; }
-        el.remove();
-      });
-    updateAudio();
-  }
+  return post;
+}
 
-  function createPost(data) {
-    const post = template.cloneNode(true);
-    // 비디오 배경
-    const bg = document.createElement('video');
-    bg.className = 'video-bg';
-    bg.src = data['MP4 URL'];
-    bg.autoplay = true;
-    bg.loop = true;
-    bg.playsInline = true;
-    bg.muted = true;
-    post.prepend(bg);
-
-    // 메타 & 텍스트
-    post.dataset.category = data._category || '';
-    post.querySelector('.id-text').textContent = data['ID'];
-    post.querySelector('.title-text').textContent = data['TITLE'];
-    post.querySelector('.music-text').textContent = data['MUSIC'];
-    const cc = post.querySelector('.comment-count');
-    if (cc) cc.textContent = data['COMMENT'] || '';
-
-    // "관심없음(임시)" 버튼 핸들러
-    const hideBtn = post.querySelector('.btn-hide-category');
-    if (hideBtn) {
-      hideBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const cat = post.dataset.category;
-        excludeCategory(cat);
-      });
-    } else {
-      // 혹시 클래스가 없으면 텍스트로 fallback 탐색
-      const buttons = post.querySelectorAll('.button .text-wrapper');
-      buttons.forEach(tw => {
-        if (tw.textContent.trim().includes('관심없음')) {
-          tw.parentElement.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const cat = post.dataset.category;
-            excludeCategory(cat);
-          });
-        }
-      });
-    }
-
-    return post;
-  }
-
-  async function loadAll() {
-    let allVideos = [];
-
-    for (const cat of categories) {
+// === 모든 CSV 불러오기 ===
+let allVideosCache = [];
+async function loadAll() {
+  try {
+    const results = await Promise.all(categories.map(async cat => {
       try {
         const res = await fetch(`${cat}.csv`);
-        if (!res.ok) throw new Error(cat + '.csv 로드 실패');
+        if (!res.ok) throw new Error(`${cat}.csv 로드 실패`);
         const text = await res.text();
-        const rows = parseCSV(text).map(r => ({ ...r, _category: cat }));
-        allVideos.push(...rows);
+        return parseCSV(text).map(r => ({ ...r, _category: cat }));
       } catch (err) {
         console.error(err);
+        return [];
       }
-    }
+    }));
 
-    // 랜덤 셔플
-    for (let i = allVideos.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [allVideos[i], allVideos[j]] = [allVideos[j], allVideos[i]];
-    }
+    allVideosCache = results.flat();
 
-    // 제외 카테고리 필터링 후 렌더
-    allVideos
-      .filter(row => !excludedCategories.has(row._category))
-      .forEach(row => container.appendChild(createPost(row)));
+    reloadVideos();
 
-    updateAudio();
     loading.style.display = 'none';
+    observeVideos();
+  } catch (err) {
+    console.error("데이터 로드 실패:", err);
+    loading.textContent = "데이터를 불러오지 못했습니다.";
   }
+}
 
-  let isScrolling = false;
+// === 현재 숨김 상태 반영해서 영상 다시 렌더 ===
+function reloadVideos() {
+  if (!container) return;
+  container.innerHTML = '';
 
-  // 기존 휠 리스너(1)
-  container.addEventListener('wheel', e => {
-    if (isScrolling) return;
-    isScrolling = true;
+  // 제외된 카테고리 빼고 렌더
+  allVideosCache
+    .filter(row => !isCategoryHidden(row._category))
+    .forEach(row => container.appendChild(createPost(row)));
 
-    const direction = e.deltaY > 0 ? 1 : -1;
-    const videos = [...container.querySelectorAll('.video')];
-    const currentScroll = container.scrollTop;
-    const viewHeight = container.clientHeight;
+  observeVideos();
+}
 
-    let currentIndex = videos.findIndex(v => Math.abs(v.offsetTop - currentScroll) < viewHeight / 2);
-    let targetIndex = currentIndex + direction;
+// === IntersectionObserver ===
+let observer;
+function observeVideos() {
+  if (!container) return;
+  if (observer) observer.disconnect();
 
-    if (targetIndex >= 0 && targetIndex < videos.length) {
-      container.scrollTo({ top: videos[targetIndex].offsetTop, behavior: 'smooth' });
-    }
+  observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const video = entry.target;
+      if (!(video instanceof HTMLVideoElement)) return;
 
-    setTimeout(() => {
-      isScrolling = false;
-      updateAudio();
-    }, 600);
-  });
-
-  function updateAudio() {
-    const videos = document.querySelectorAll('.video');
-    const containerRect = container.getBoundingClientRect();
-    let someoneVisible = false;
-
-    videos.forEach(video => {
-      const rect = video.getBoundingClientRect();
-      const videoEl = video.querySelector('video');
-      const fullyVisible = rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
-      if (videoEl) {
-        videoEl.muted = !fullyVisible;
-        if (fullyVisible) { videoEl.play().catch(()=>{}); someoneVisible = true; }
-        else { videoEl.pause(); }
+      if (entry.isIntersecting) {
+        if (!video.src && video.dataset.src) {
+          video.src = video.dataset.src;
+        }
+        video.play().catch(()=>{});
+        video.muted = !userGestureGranted;
+      } else {
+        video.pause();
       }
     });
+  }, { threshold: 0.75 });
 
-    // 완전히 보이는 게 없으면, 가장 가까운 한 개만 소리 재생 시도
-    if (!someoneVisible && videos.length) {
-      const currentScroll = container.scrollTop;
-      const closest = [...videos].reduce((best, v) => {
-        const d = Math.abs(v.offsetTop - currentScroll);
-        return d < best.d ? { el: v, d } : best;
-      }, { el: videos[0], d: Infinity }).el;
-      const ve = closest.querySelector('video');
-      if (ve) { ve.muted = false; ve.play().catch(()=>{}); }
-    }
+  document.querySelectorAll('.video video').forEach(v => observer.observe(v));
+}
+
+// === 휠 스크롤 스냅 ===
+let isScrolling = false;
+container?.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (isScrolling) return;
+  isScrolling = true;
+
+  const direction = e.deltaY > 0 ? 1 : -1;
+  const videos = [...container.querySelectorAll('.video')];
+  const currentScroll = container.scrollTop;
+  const viewHeight = container.clientHeight;
+
+  let currentIndex = videos.findIndex(
+    v => Math.abs(v.offsetTop - currentScroll) < viewHeight / 2
+  );
+  if (currentIndex === -1) {
+    currentIndex = Math.round(currentScroll / viewHeight);
   }
 
-  // 기존 휠 리스너(2)
-  container.addEventListener('wheel', (e) => {
-    e.preventDefault();  // 기본 스크롤 막기
-    if (isScrolling) return;
-    isScrolling = true;
+  let targetIndex = Math.max(0, Math.min(videos.length - 1, currentIndex + direction));
+  const targetOffset = videos[targetIndex]?.offsetTop ?? 0;
+  container.scrollTo({ top: targetOffset, behavior: 'smooth' });
 
-    const direction = e.deltaY > 0 ? 1 : -1;
-    const videos = [...container.querySelectorAll('.video')];
-    const currentScroll = container.scrollTop;
-    const viewHeight = container.clientHeight;
+  setTimeout(() => { isScrolling = false; }, 600);
+}, { passive: false });
 
-    let currentIndex = videos.findIndex(v => Math.abs(v.offsetTop - currentScroll) < viewHeight / 2);
-    if (currentIndex === -1) {
-      currentIndex = Math.round(currentScroll / viewHeight);
+// === 모바일 오토플레이 대응 ===
+let userGestureGranted = false;
+window.addEventListener('touchstart', () => {
+  userGestureGranted = true;
+  const firstVideo = document.querySelector('.video video');
+  if (firstVideo) {
+    if (!firstVideo.src && firstVideo.dataset.src) {
+      firstVideo.src = firstVideo.dataset.src;
     }
+    firstVideo.play().catch(e => console.warn('Autoplay blocked:', e));
+    firstVideo.muted = false;
+  }
+}, { once: true });
 
-    let targetIndex = currentIndex + direction;
-    targetIndex = Math.max(0, Math.min(videos.length - 1, targetIndex));
-
-    const targetOffset = videos[targetIndex]?.offsetTop ?? 0;
-    container.scrollTo({ top: targetOffset, behavior: 'smooth' });
-
-    setTimeout(() => {
-      isScrolling = false;
-      updateAudio();
-    }, 600);
-  }, { passive: false });
-
-  loadAll();
-
-  window.addEventListener('touchstart', () => {
-    const firstVideo = document.querySelector('.video video');
-    if (firstVideo) {
-      firstVideo.play().catch(e => console.warn('Autoplay blocked:', e));
-    }
-  }, { once: true });
+loadAll();
 </script>
+
 </body>
 </html>
+
