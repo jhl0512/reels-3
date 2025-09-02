@@ -48,7 +48,7 @@
 </head>
 <body>
 <div id="container">
-  <!-- 템플릿으로 사용할 한 개의 .video -->
+  <!-- 템플릿 -->
   <div class="video" id="video-template">
     <div class="top">
       <!-- search icon -->
@@ -103,7 +103,7 @@ function shuffle(arr) {
   }
   return arr;
 }
-// 페이지 로드시 한 번 무작위 순서로 섞기
+// 페이지 로드시 카테고리 순서 랜덤
 categories = shuffle(categories);
 
 const hiddenCategories = new Map(); // key: 카테고리, value: timestamp
@@ -144,7 +144,7 @@ function hideCategory(cat) {
 function isCategoryHidden(cat) {
   if (!hiddenCategories.has(cat)) return false;
   const hiddenAt = hiddenCategories.get(cat);
-  if (Date.now() - hiddenAt > 120000) { // 2분 지나면 복구
+  if (Date.now() - hiddenAt > 120000) { // 2분 후 복구
     hiddenCategories.delete(cat);
     return false;
   }
@@ -213,14 +213,17 @@ async function loadAll() {
         const res = await fetch(`${cat}.csv`);
         if (!res.ok) throw new Error(`${cat}.csv 로드 실패`);
         const text = await res.text();
-        return parseCSV(text).map(r => ({ ...r, _category: cat }));
+        // 카테고리 내부도 랜덤
+        const rows = parseCSV(text).map(r => ({ ...r, _category: cat }));
+        return shuffle(rows);
       } catch (err) {
         console.error(err);
         return [];
       }
     }));
 
-    allVideosCache = results.flat();
+    // 최종 전체도 랜덤(카테고리 섞임 + 각 카테고리 내부 섞임 + 전체 섞임)
+    allVideosCache = shuffle(results.flat());
 
     reloadVideos();
 
@@ -242,36 +245,29 @@ function reloadVideos() {
     .forEach(row => container.appendChild(createPost(row)));
 
   observeVideos();
-  // 리로드 직후 오디오 정책 적용(초기엔 전부 mute 상태 유지)
+  // 리로드 직후 오디오 정책 적용(초기엔 전부 mute)
   applyAudioPolicy();
 }
 
 /* ----------------- 오디오 정책 ----------------- */
-// 브라우저 사용자 제스처 확보 여부
+// 사용자 제스처 확보 여부
 let userGestureGranted = false;
 
-// 현재 data-active="true"인 비디오 반환
+// 현재 data-active="true" 비디오
 function getActiveVideo() {
   return document.querySelector('.video video.video-bg[data-active="true"]');
 }
 
-// 모든 비디오를 순회하며 "한 번에 하나만 소리"
+// 한 번에 하나만 소리
 function applyAudioPolicy() {
   const videos = document.querySelectorAll('.video video.video-bg');
-  let active = getActiveVideo();
+  const active = getActiveVideo();
 
-  videos.forEach(v => {
-    // 기본은 모두 mute
-    v.muted = true;
-  });
+  videos.forEach(v => { v.muted = true; });
 
   if (userGestureGranted && active) {
-    // 사용자 제스처가 있고 화면 내 활성 영상만 unmute
     active.muted = false;
-    // 혹시 재생이 멈춰있다면 재생 시도
-    if (active.paused) {
-      active.play().catch(()=>{});
-    }
+    if (active.paused) active.play().catch(()=>{});
   }
 }
 
@@ -287,29 +283,20 @@ function observeVideos() {
       if (!(video instanceof HTMLVideoElement)) return;
 
       if (entry.isIntersecting) {
-        // lazy-load
-        if (!video.src && video.dataset.src) {
-          video.src = video.dataset.src;
-        }
-        // 현재 활성 표시
+        if (!video.src && video.dataset.src) video.src = video.dataset.src;
         video.setAttribute('data-active', 'true');
 
-        // 다른 모든 비디오의 active 제거
         document.querySelectorAll('.video video.video-bg').forEach(v => {
           if (v !== video) v.removeAttribute('data-active');
         });
 
-        // 재생 시도
         video.play().catch(()=>{});
-
       } else {
-        // 뷰포트에서 나가면 active 제거 및 일단 일시정지
         video.removeAttribute('data-active');
         video.pause();
       }
     });
 
-    // 교차 변경이 끝날 때마다 정책 반영
     applyAudioPolicy();
   }, { threshold: 0.75 });
 
@@ -335,7 +322,7 @@ container?.addEventListener('wheel', (e) => {
     currentIndex = Math.round(currentScroll / viewHeight);
   }
 
-  let targetIndex = Math.max(0, Math.min(videos.length - 1, currentIndex + direction));
+  const targetIndex = Math.max(0, Math.min(videos.length - 1, currentIndex + direction));
   const targetOffset = videos[targetIndex]?.offsetTop ?? 0;
   container.scrollTo({ top: targetOffset, behavior: 'smooth' });
 
@@ -343,13 +330,11 @@ container?.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 /* ----------------- 사용자 제스처 이벤트 ----------------- */
-// 터치(모바일) 첫 입력 → 권한 확보 + 활성 영상만 소리
 window.addEventListener('touchstart', () => {
   userGestureGranted = true;
   applyAudioPolicy();
 }, { once: true });
 
-// 클릭(데스크톱/모바일 공통) → 권한 확보 + 활성 영상만 소리
 window.addEventListener('click', () => {
   userGestureGranted = true;
   applyAudioPolicy();
@@ -360,4 +345,5 @@ loadAll();
 </script>
 </body>
 </html>
+
 
