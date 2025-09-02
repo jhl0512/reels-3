@@ -92,7 +92,20 @@ window.addEventListener('resize', setRealHeight);
 window.addEventListener('load', setRealHeight);
 
 /* ----------------- 데이터/상태 ----------------- */
-const categories = ['tesla', 'dog', 'aot'];
+/* 1) 카테고리 정의 + 무작위 셔플 */
+let categories = ['tesla', 'dog', 'aot'];
+
+// Fisher–Yates shuffle
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+// 페이지 로드시 한 번 무작위 순서로 섞기
+categories = shuffle(categories);
+
 const hiddenCategories = new Map(); // key: 카테고리, value: timestamp
 
 const container = document.getElementById('container');
@@ -208,6 +221,7 @@ async function loadAll() {
     }));
 
     allVideosCache = results.flat();
+
     reloadVideos();
 
     loading.style.display = 'none';
@@ -285,7 +299,7 @@ function observeVideos() {
           if (v !== video) v.removeAttribute('data-active');
         });
 
-        // 재생 시도 (모바일/데스크톱 공통)
+        // 재생 시도
         video.play().catch(()=>{});
 
       } else {
