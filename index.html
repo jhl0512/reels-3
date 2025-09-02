@@ -14,9 +14,7 @@
       overflow: hidden;
       background: #000;
     }
-    body {
-      padding-top: env(safe-area-inset-top);
-    }
+    body { padding-top: env(safe-area-inset-top); }
     #container {
       height: calc(var(--vh, 1vh) * 100);
       overflow-y: scroll;
@@ -85,6 +83,7 @@
 </div>
 
 <script>
+/* ----------------- 공통 유틸 ----------------- */
 function setRealHeight() {
   const vh = window.innerHeight * 0.01;
   document.documentElement.style.setProperty('--vh', `${vh}px`);
@@ -92,10 +91,9 @@ function setRealHeight() {
 window.addEventListener('resize', setRealHeight);
 window.addEventListener('load', setRealHeight);
 
+/* ----------------- 데이터/상태 ----------------- */
 const categories = ['tesla', 'dog', 'aot'];
-// 기존 excludedCategories 대신 → 숨김 상태 관리
-const hiddenCategories = new Map(); 
-// key: 카테고리, value: timestamp (언제 숨겼는지)
+const hiddenCategories = new Map(); // key: 카테고리, value: timestamp
 
 const container = document.getElementById('container');
 const loading = document.getElementById('loading');
@@ -106,7 +104,7 @@ if (!container || !loading || !template) {
 template.removeAttribute('id');
 container?.removeChild(template);
 
-// === CSV 파싱 (기본 개선: CRLF, BOM 제거) ===
+/* ----------------- CSV 파싱 ----------------- */
 function parseCSV(text) {
   text = text.replace(/^\uFEFF/, ''); // BOM 제거
   const lines = text.trim().split(/\r?\n/);
@@ -119,51 +117,34 @@ function parseCSV(text) {
   });
 }
 
-// === 카테고리 숨김 & 관리 ===
+/* ----------------- 카테고리 숨김 ----------------- */
 function hideCategory(cat) {
   if (!cat || !container) return;
   hiddenCategories.set(cat, Date.now());
-
-  // DOM에서 제거
-  [...container.querySelectorAll(`.video[data-category="${cat}"]`)]
-    .forEach(el => {
-      const vid = el.querySelector('video');
-      if (vid) { vid.pause(); vid.src = ''; }
-      el.remove();
-    });
-
+  [...container.querySelectorAll(`.video[data-category="${cat}"]`)].forEach(el => {
+    const vid = el.querySelector('video');
+    if (vid) { vid.pause(); vid.src = ''; }
+    el.remove();
+  });
   updateVideosAfterHide();
 }
-
-// 2분 체크 후 아직 숨김인지 여부
 function isCategoryHidden(cat) {
   if (!hiddenCategories.has(cat)) return false;
   const hiddenAt = hiddenCategories.get(cat);
-  if (Date.now() - hiddenAt > 120000) {
-    hiddenCategories.delete(cat); // 2분 지남 → 복구
+  if (Date.now() - hiddenAt > 120000) { // 2분 지나면 복구
+    hiddenCategories.delete(cat);
     return false;
   }
   return true;
 }
-
-// 모든 카테고리가 숨겨져버렸을 때 → 가장 오래된 것 복원
 function restoreOldestCategory() {
-  let oldest = null;
-  let oldestTime = Infinity;
+  let oldest = null, oldestTime = Infinity;
   for (let [cat, time] of hiddenCategories) {
-    if (time < oldestTime) {
-      oldest = cat;
-      oldestTime = time;
-    }
+    if (time < oldestTime) { oldest = cat; oldestTime = time; }
   }
-  if (oldest) {
-    hiddenCategories.delete(oldest);
-    return oldest;
-  }
-  return null;
+  if (oldest) hiddenCategories.delete(oldest);
+  return oldest;
 }
-
-// 숨김 후 처리: 전부 숨김 상태라면 복원
 function updateVideosAfterHide() {
   const visibleCats = categories.filter(c => !isCategoryHidden(c));
   if (visibleCats.length === 0) {
@@ -177,7 +158,7 @@ function updateVideosAfterHide() {
   }
 }
 
-// === 포스트 생성 ===
+/* ----------------- 포스트 생성 ----------------- */
 function createPost(data) {
   const post = template.cloneNode(true);
   post.dataset.category = data._category || '';
@@ -189,7 +170,7 @@ function createPost(data) {
   bg.autoplay = true;
   bg.loop = true;
   bg.playsInline = true;
-  bg.muted = true;
+  bg.muted = true;          // 초기엔 항상 mute
   bg.preload = "none";
   post.prepend(bg);
 
@@ -210,7 +191,7 @@ function createPost(data) {
   return post;
 }
 
-// === 모든 CSV 불러오기 ===
+/* ----------------- 데이터 로드 ----------------- */
 let allVideosCache = [];
 async function loadAll() {
   try {
@@ -227,7 +208,6 @@ async function loadAll() {
     }));
 
     allVideosCache = results.flat();
-
     reloadVideos();
 
     loading.style.display = 'none';
@@ -238,20 +218,50 @@ async function loadAll() {
   }
 }
 
-// === 현재 숨김 상태 반영해서 영상 다시 렌더 ===
+/* ----------------- 렌더/리로드 ----------------- */
 function reloadVideos() {
   if (!container) return;
   container.innerHTML = '';
 
-  // 제외된 카테고리 빼고 렌더
   allVideosCache
     .filter(row => !isCategoryHidden(row._category))
     .forEach(row => container.appendChild(createPost(row)));
 
   observeVideos();
+  // 리로드 직후 오디오 정책 적용(초기엔 전부 mute 상태 유지)
+  applyAudioPolicy();
 }
 
-// === IntersectionObserver ===
+/* ----------------- 오디오 정책 ----------------- */
+// 브라우저 사용자 제스처 확보 여부
+let userGestureGranted = false;
+
+// 현재 data-active="true"인 비디오 반환
+function getActiveVideo() {
+  return document.querySelector('.video video.video-bg[data-active="true"]');
+}
+
+// 모든 비디오를 순회하며 "한 번에 하나만 소리"
+function applyAudioPolicy() {
+  const videos = document.querySelectorAll('.video video.video-bg');
+  let active = getActiveVideo();
+
+  videos.forEach(v => {
+    // 기본은 모두 mute
+    v.muted = true;
+  });
+
+  if (userGestureGranted && active) {
+    // 사용자 제스처가 있고 화면 내 활성 영상만 unmute
+    active.muted = false;
+    // 혹시 재생이 멈춰있다면 재생 시도
+    if (active.paused) {
+      active.play().catch(()=>{});
+    }
+  }
+}
+
+/* ----------------- IntersectionObserver ----------------- */
 let observer;
 function observeVideos() {
   if (!container) return;
@@ -263,21 +273,36 @@ function observeVideos() {
       if (!(video instanceof HTMLVideoElement)) return;
 
       if (entry.isIntersecting) {
+        // lazy-load
         if (!video.src && video.dataset.src) {
           video.src = video.dataset.src;
         }
+        // 현재 활성 표시
+        video.setAttribute('data-active', 'true');
+
+        // 다른 모든 비디오의 active 제거
+        document.querySelectorAll('.video video.video-bg').forEach(v => {
+          if (v !== video) v.removeAttribute('data-active');
+        });
+
+        // 재생 시도 (모바일/데스크톱 공통)
         video.play().catch(()=>{});
-        video.muted = !userGestureGranted;
+
       } else {
+        // 뷰포트에서 나가면 active 제거 및 일단 일시정지
+        video.removeAttribute('data-active');
         video.pause();
       }
     });
+
+    // 교차 변경이 끝날 때마다 정책 반영
+    applyAudioPolicy();
   }, { threshold: 0.75 });
 
-  document.querySelectorAll('.video video').forEach(v => observer.observe(v));
+  document.querySelectorAll('.video video.video-bg').forEach(v => observer.observe(v));
 }
 
-// === 휠 스크롤 스냅 ===
+/* ----------------- 스크롤 스냅(한 장씩) ----------------- */
 let isScrolling = false;
 container?.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -303,23 +328,22 @@ container?.addEventListener('wheel', (e) => {
   setTimeout(() => { isScrolling = false; }, 600);
 }, { passive: false });
 
-// === 모바일 오토플레이 대응 ===
-let userGestureGranted = false;
+/* ----------------- 사용자 제스처 이벤트 ----------------- */
+// 터치(모바일) 첫 입력 → 권한 확보 + 활성 영상만 소리
 window.addEventListener('touchstart', () => {
   userGestureGranted = true;
-  const firstVideo = document.querySelector('.video video');
-  if (firstVideo) {
-    if (!firstVideo.src && firstVideo.dataset.src) {
-      firstVideo.src = firstVideo.dataset.src;
-    }
-    firstVideo.play().catch(e => console.warn('Autoplay blocked:', e));
-    firstVideo.muted = false;
-  }
+  applyAudioPolicy();
 }, { once: true });
 
+// 클릭(데스크톱/모바일 공통) → 권한 확보 + 활성 영상만 소리
+window.addEventListener('click', () => {
+  userGestureGranted = true;
+  applyAudioPolicy();
+}, { once: false });
+
+/* ----------------- 시작 ----------------- */
 loadAll();
 </script>
-
 </body>
 </html>
 
