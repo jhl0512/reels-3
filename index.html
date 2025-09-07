@@ -1,4 +1,5 @@
-<!-- index.html -->
+<!-- source: :contentReference[oaicite:0]{index=0} -->
+<!-- index (3).html — Bottom sheet + 5s toast added; selecting a reason DOES NOT hide the category -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -44,6 +45,48 @@
       color: #333;
       font-size: 0.9rem;
     }
+
+    /* ===== Toast (5s) ===== */
+    .toast {
+      position: fixed; top: env(safe-area-inset-top, 0); left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(20,20,20,0.92); color: #fff;
+      padding: 10px 14px; border-radius: 12px; font-size: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.35);
+      opacity: 0; z-index: 9999; pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(8px); }
+
+    /* ===== Bottom Sheet ===== */
+    .sheet-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      opacity: 0; pointer-events: none; transition: opacity .2s ease;
+      z-index: 9997;
+    }
+    .sheet-backdrop.open { opacity: 1; pointer-events: auto; }
+    .sheet {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: #111; color: #fff; border-top-left-radius: 16px; border-top-right-radius: 16px;
+      transform: translateY(100%); transition: transform .28s ease;
+      padding: 14px 16px 20px; z-index: 9998; max-height: 75vh; overflow-y: auto;
+    }
+    .sheet.open { transform: translateY(0%); }
+    .sheet-title { font-size: 16px; font-weight: 700; margin: 6px 0 12px; }
+    .sheet-list { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .sheet-item {
+      width: 100%; text-align: left; border: 0; border-radius: 12px;
+      background: rgba(255,255,255,0.08); color: #fff; padding: 12px 14px; font-size: 15px;
+      display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+    }
+    .sheet-item:active { transform: translateY(1px); }
+    .sheet-footer { margin-top: 10px; display: flex; justify-content: flex-end; gap: 8px; }
+    .sheet-close {
+      background: rgba(255,255,255,0.15); color:#fff; border:0; border-radius:10px; padding:10px 12px; cursor:pointer;
+    }
+    @media (min-width: 540px){
+      .sheet { margin: 0 auto; max-width: 520px; border-top-left-radius: 18px; border-top-right-radius: 18px; }
+    }
   </style>
 </head>
 <body>
@@ -80,6 +123,28 @@
     </div>
   </div>
   <div id="loading">로딩 중...</div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast" role="status" aria-live="polite">비슷한 동영상이 더 적게 표시됩니다.</div>
+
+<!-- Bottom Sheet -->
+<div id="sheet-backdrop" class="sheet-backdrop" tabindex="-1" aria-hidden="true"></div>
+<div id="bottom-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" aria-hidden="true">
+  <div class="sheet-title" id="sheet-title">관심이 없는 이유를 알려주세요</div>
+  <div class="sheet-list" id="sheet-list">
+    <button class="sheet-item" data-reason="관련성이 없음">관련성이 없음</button>
+    <button class="sheet-item" data-reason="지루함">지루함</button>
+    <button class="sheet-item" data-reason="너무 성적임">너무 성적임</button>
+    <button class="sheet-item" data-reason="혐오감을 줌">혐오감을 줌</button>
+    <button class="sheet-item" data-reason="폭력적인">폭력적인</button>
+    <button class="sheet-item" data-reason="불쾌감을 줌">불쾌감을 줌</button>
+    <button class="sheet-item" data-reason="혼동을 야기함">혼동을 야기함</button>
+    <button class="sheet-item" data-reason="기타">기타</button>
+  </div>
+  <div class="sheet-footer">
+    <button id="sheet-cancel" class="sheet-close" aria-label="닫기">닫기</button>
+  </div>
 </div>
 
 <script>
@@ -193,11 +258,12 @@ function createPost(data) {
   const cc = post.querySelector('.comment-count');
   if (cc) cc.textContent = data['COMMENT'] || '';
 
+  // 관심없음 → 바텀시트 오픈(이 파일은 실제 숨김 실행하지 않음)
   const hideBtn = post.querySelector('.btn-hide-category');
   if (hideBtn) {
     hideBtn.addEventListener('click', e => {
       e.stopPropagation();
-      hideCategory(post.dataset.category);
+      openBottomSheet(post.dataset.category);
     });
   }
 
@@ -339,6 +405,46 @@ window.addEventListener('click', () => {
   userGestureGranted = true;
   applyAudioPolicy();
 }, { once: false });
+
+/* ----------------- Bottom Sheet & Toast (추가) ----------------- */
+const sheet = document.getElementById('bottom-sheet');
+const sheetBackdrop = document.getElementById('sheet-backdrop');
+const sheetCancel = document.getElementById('sheet-cancel');
+const sheetList = document.getElementById('sheet-list');
+const toast = document.getElementById('toast');
+
+let pendingCategory = null;
+let toastTimer = null;
+
+function openBottomSheet(category){
+  pendingCategory = category || null;
+  if(sheet){ sheet.setAttribute('aria-hidden','false'); sheet.classList.add('open'); }
+  if(sheetBackdrop){ sheetBackdrop.setAttribute('aria-hidden','false'); sheetBackdrop.classList.add('open'); }
+}
+function closeBottomSheet(){
+  if(sheet){ sheet.setAttribute('aria-hidden','true'); sheet.classList.remove('open'); }
+  if(sheetBackdrop){ sheetBackdrop.setAttribute('aria-hidden','true'); sheetBackdrop.classList.remove('open'); }
+  pendingCategory = null;
+}
+function showToast(message, durationMs=5000){
+  if(!toast) return;
+  toast.textContent = message;
+  toast.classList.add('show');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ toast.classList.remove('show'); }, durationMs);
+}
+if(sheetBackdrop) sheetBackdrop.addEventListener('click', closeBottomSheet);
+if(sheetCancel) sheetCancel.addEventListener('click', closeBottomSheet);
+
+// 이 파일은 '이유 선택' 시 카테고리를 숨기지 않습니다. (hideCategory 호출 안 함)
+if(sheetList) sheetList.addEventListener('click', (e)=>{
+  const btn = e.target.closest('.sheet-item');
+  if(!btn) return;
+  const reason = btn.dataset.reason; // 필요 시 로깅 가능
+  const cat = pendingCategory; // 참고만 하고 사용하지 않음(숨김 미실행)
+  closeBottomSheet();
+  showToast('비슷한 동영상이 더 적게 표시됩니다.', 5000); // 5초 토스트만 표시
+});
 
 /* ----------------- 시작 ----------------- */
 loadAll();
