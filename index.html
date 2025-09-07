@@ -1,5 +1,4 @@
-<!-- source: :contentReference[oaicite:0]{index=0} -->
-<!-- index (3).html — Bottom sheet + 5s toast added; selecting a reason DOES NOT hide the category -->
+<!-- index (3).html — Bottom sheet + 5s toast; selecting a reason DOES NOT hide the category; videos centered -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -23,12 +22,14 @@
       -webkit-overflow-scrolling: touch;
     }
     #container::-webkit-scrollbar { display: none; }
+
     .video {
       position: relative;
       scroll-snap-align: end;
       height: 100vh;
       max-width: 500px;
       overflow: hidden;
+      margin: 0 auto; /* Center the video card */
     }
     .video video.video-bg {
       position: absolute;
@@ -38,12 +39,15 @@
       z-index: 0; pointer-events: none;
     }
     .video > * { position: relative; z-index: 1; }
+
     #loading {
       text-align: center;
       padding: 8px;
       background: #fff;
       color: #333;
       font-size: 0.9rem;
+      max-width: 500px;
+      margin: 0 auto; /* Center the loading bar, too */
     }
 
     /* ===== Toast (5s) ===== */
