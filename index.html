@@ -453,6 +453,102 @@ if(sheetList) sheetList.addEventListener('click', (e)=>{
 /* ----------------- 시작 ----------------- */
 loadAll();
 </script>
+
+<!-- ✅ CSV 내보내기 버튼 (고정 오버레이 — 기존 레이아웃 영향 없음) -->
+<button id="btn-export" type="button"
+  aria-label="CSV 내보내기"
+  style="position:fixed;right:16px;bottom:16px;z-index:10000;background:rgba(17,17,17,.95);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1;cursor:pointer;user-select:none;">
+  CSV
+</button>
+
+<!-- ✅ 추가 스크립트: '이유' 클릭 로깅 + CSV 내보내기 (원본 동작 유지) -->
+<script>
+(function(){
+  const LOG_KEY = 'not_interested_logs_v1';
+
+  function getLogs(){ try { return JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch { return []; } }
+  function saveLogs(arr){ localStorage.setItem(LOG_KEY, JSON.stringify(arr)); }
+
+  function exportCSV(){
+    const logs = getLogs();
+    if(!logs.length){ alert('저장된 로그가 없습니다.'); return; }
+    const headers = ['ts_iso','ts_local','reason','category','title','id','music','video_url'];
+    const rows = logs.map(o => headers.map(h => (String(o[h] ?? '')).replaceAll('"','""')));
+    const csv = [headers.join(','), ...rows.map(r => `"${r.join('","')}"`)].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); const d = new Date();
+    a.href = url; a.download = `not_interested_logs_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
+  // 현재 화면의 활성 카드 추정 (중앙 기준)
+  function getActiveCard(){
+    const activeVideo = document.querySelector('.video video.video-bg[data-active="true"]');
+    if (activeVideo) return activeVideo.closest('.video');
+    const cards = Array.from(document.querySelectorAll('.video'));
+    if (!cards.length) return null;
+    const center = window.innerHeight / 2;
+    let best=null, bestDist=Infinity;
+    cards.forEach(card=>{
+      const r = card.getBoundingClientRect();
+      const mid = r.top + r.height/2;
+      const d = Math.abs(mid - center);
+      if (d < bestDist) { bestDist = d; best = card; }
+    });
+    return best;
+  }
+  function extractRow(card){
+    if(!card) return null;
+    const get = sel => card.querySelector(sel)?.textContent?.trim() || '';
+    const v = card.querySelector('video.video-bg, video');
+    return {
+      TITLE   : get('.title-text'),
+      ID      : get('.id-text'),
+      MUSIC   : get('.music-text'),
+      'MP4 URL': v?.currentSrc || v?.src || ''
+    };
+  }
+
+  // ✅ 이유 클릭 로깅 (원본 핸들러 유지: 숨김 안 함)
+  const list = document.getElementById('sheet-list');
+  if (list && !list.__csv_hooked){
+    list.__csv_hooked = true;
+    list.addEventListener('click', function(e){
+      const btn = e.target.closest('.sheet-item, [data-reason], button');
+      if(!btn) return;
+      const reason = btn.getAttribute('data-reason') || btn.textContent.trim() || '';
+      // category 우선순위: pendingCategory → 버튼 data-category → 카드 data-category
+      let category = '';
+      try { if (typeof pendingCategory !== 'undefined' && pendingCategory) category = pendingCategory; } catch(e){}
+      if (!category) category = btn.getAttribute('data-category') || '';
+      const card = getActiveCard();
+      if (!category && card) category = card.getAttribute('data-category') || '';
+
+      const row = extractRow(card);
+      const now = new Date();
+      const entry = {
+        ts_iso  : now.toISOString(),
+        ts_local: now.toLocaleString(),
+        reason,
+        category,
+        title   : row?.TITLE ?? '',
+        id      : row?.ID ?? '',
+        music   : row?.MUSIC ?? '',
+        video_url: row?.['MP4 URL'] ?? ''
+      };
+      const arr = getLogs(); arr.push(entry); saveLogs(arr);
+      try { console.debug('[NI LOG]', entry); } catch(e){}
+    }, true); // capture 단계에서 로깅만 추가
+  }
+
+  // ✅ CSV 버튼 연결
+  document.getElementById('btn-export')?.addEventListener('click', exportCSV);
+
+  // 콘솔에서도 사용 가능
+  window.exportNI = { get: getLogs, exportCSV };
+})();
+</script>
 </body>
 </html>
 
