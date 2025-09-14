@@ -1,4 +1,4 @@
-<!-- index (3).html — Bottom sheet + 5s toast; selecting a reason DOES NOT hide the category; videos centered -->
+<!-- index (3).html — Bottom sheet + 5s toast; selecting a reason DOES NOT hide the category; scrolls to next video; videos centered -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -262,7 +262,7 @@ function createPost(data) {
   const cc = post.querySelector('.comment-count');
   if (cc) cc.textContent = data['COMMENT'] || '';
 
-  // 관심없음 → 바텀시트 오픈(이 파일은 실제 숨김 실행하지 않음)
+  // 관심없음 → 바텀시트 오픈
   const hideBtn = post.querySelector('.btn-hide-category');
   if (hideBtn) {
     hideBtn.addEventListener('click', e => {
@@ -410,7 +410,7 @@ window.addEventListener('click', () => {
   applyAudioPolicy();
 }, { once: false });
 
-/* ----------------- Bottom Sheet & Toast (추가) ----------------- */
+/* ----------------- Bottom Sheet & Toast (수정: 사유 선택 시 다음 카드로 이동) ----------------- */
 const sheet = document.getElementById('bottom-sheet');
 const sheetBackdrop = document.getElementById('sheet-backdrop');
 const sheetCancel = document.getElementById('sheet-cancel');
@@ -437,17 +437,62 @@ function showToast(message, durationMs=5000){
   if(toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>{ toast.classList.remove('show'); }, durationMs);
 }
+
+/* Helper: 현재(또는 중앙) 카드와 다음 카드 계산 */
+function getCurrentAndNextCard(){
+  const cards = [...document.querySelectorAll('.video')];
+  if (!cards.length) return { current: null, next: null, index: -1 };
+
+  // 우선 active 비디오 기반
+  const active = document.querySelector('.video video.video-bg[data-active="true"]');
+  let currentCard = active ? active.closest('.video') : null;
+  let idx = currentCard ? cards.indexOf(currentCard) : -1;
+
+  // fallback: 화면 중앙 기준
+  if (idx === -1) {
+    const center = window.innerHeight / 2;
+    let best = -1, bestDist = Infinity;
+    cards.forEach((card, i) => {
+      const r = card.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      const d = Math.abs(mid - center);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    idx = best;
+    currentCard = cards[idx] || null;
+  }
+
+  const nextCard = (idx >= 0 && idx < cards.length - 1) ? cards[idx + 1] : null;
+  return { current: currentCard, next: nextCard, index: idx };
+}
+
+function scrollToCard(card){
+  if (!card || !container) return;
+  container.scrollTo({ top: card.offsetTop, behavior: 'smooth' });
+}
+
 if(sheetBackdrop) sheetBackdrop.addEventListener('click', closeBottomSheet);
 if(sheetCancel) sheetCancel.addEventListener('click', closeBottomSheet);
 
 // 이 파일은 '이유 선택' 시 카테고리를 숨기지 않습니다. (hideCategory 호출 안 함)
+// ✅ 변경점: 이유 탭 시 토스트 표시 + 다음 카드로 스크롤
 if(sheetList) sheetList.addEventListener('click', (e)=>{
   const btn = e.target.closest('.sheet-item');
   if(!btn) return;
-  const reason = btn.dataset.reason; // 필요 시 로깅 가능
-  const cat = pendingCategory; // 참고만 하고 사용하지 않음(숨김 미실행)
+
+  // 다음 카드 계산을 먼저 해두고
+  const { next } = getCurrentAndNextCard();
+
+  const reason = btn.dataset.reason; // 로깅은 아래 CSV 스크립트에서 capture 단계로 처리
+  const cat = pendingCategory; // 참고만
+
   closeBottomSheet();
-  showToast('비슷한 동영상이 더 적게 표시됩니다.', 5000); // 5초 토스트만 표시
+  showToast('비슷한 동영상이 더 적게 표시됩니다.', 5000); // 5초 토스트
+
+  // 다음 카드로 이동
+  if (next) {
+    scrollToCard(next);
+  }
 });
 
 /* ----------------- 시작 ----------------- */
@@ -510,7 +555,7 @@ loadAll();
     };
   }
 
-  // ✅ 이유 클릭 로깅 (원본 핸들러 유지: 숨김 안 함)
+  // ✅ 이유 클릭 로깅 (capture 단계에서 로깅만 추가 — 스크롤/토스트는 본문 핸들러가 처리)
   const list = document.getElementById('sheet-list');
   if (list && !list.__csv_hooked){
     list.__csv_hooked = true;
@@ -539,7 +584,7 @@ loadAll();
       };
       const arr = getLogs(); arr.push(entry); saveLogs(arr);
       try { console.debug('[NI LOG]', entry); } catch(e){}
-    }, true); // capture 단계에서 로깅만 추가
+    }, true); // capture 단계
   }
 
   // ✅ CSV 버튼 연결
@@ -551,6 +596,4 @@ loadAll();
 </script>
 </body>
 </html>
-
-
 
